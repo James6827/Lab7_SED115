@@ -1,0 +1,72 @@
+from servo_translator import translate  # importing the translate function from the servo_translator module
+
+# function to read the g-code file and return its lines
+# this function opens the file in read mode, reads all its lines, and returns them as a list
+def read_gcode_file(filename):
+    with open(filename, 'r') as file:
+        return file.readlines()
+
+# function to parse a single line of g-code and extract the command and any parameters
+# the function uses simple string manipulation to identify and extract the needed data
+def parse_gcode_line(line):
+    line = line.strip()  # remove any leading or trailing whitespace from the line
+    if line.startswith("G1"):  # check if the line contains a movement command
+        params = line.split()  # split the line into parts based on spaces
+        command = params[0]  # the first part is always the command
+        angles = {}  # create a dictionary to store the extracted angles
+        for param in params[1:]:  # loop through the remaining parts
+            if param.startswith("S"):  # if the parameter specifies the shoulder angle
+                angles["shoulder"] = float(param[1:])  # convert the value after 'S' to a float
+            elif param.startswith("E"):  # if the parameter specifies the elbow angle
+                angles["elbow"] = float(param[1:])  # convert the value after 'E' to a float
+        return command, angles  # return the parsed command and parameters
+    elif line.startswith("M3"):  # check if the line is a command to move the pen down
+        return "M3", {}  # return the command with no parameters
+    elif line.startswith("M5"):  # check if the line is a command to lift the pen up
+        return "M5", {}  # return the command with no parameters
+    elif line.startswith("M18"):  # check if the line is a command to disable all servos
+        return "M18", {}  # return the command with no parameters
+    else:
+        return None, {}  # return none if the line does not contain a recognized command
+
+# function to execute a given g-code command using the specified servo motors
+# this function uses the provided parameters and applies them to the corresponding servo motor
+def execute_command(command, params, servos):
+    if command == "G1":  # handle the movement command
+        if "shoulder" in params:  # if a shoulder angle is specified
+            servos["shoulder"].duty_u16(translate(params["shoulder"]))  # move the shoulder servo to the specified angle
+        if "elbow" in params:  # if an elbow angle is specified
+            servos["elbow"].duty_u16(translate(params["elbow"]))  # move the elbow servo to the specified angle
+    elif command == "M3":  # handle the pen-down command
+        servos["wrist"].duty_u16(translate(30))  # move the wrist servo to the down position (30 degrees)
+    elif command == "M5":  # handle the pen-up command
+        servos["wrist"].duty_u16(translate(0))  # move the wrist servo to the up position (0 degrees)
+    elif command == "M18":  # handle the command to disable all servos
+        for servo in servos.values():  # loop through all servo motors
+            servo.duty_u16(0)  # disable the servo by setting the pwm duty cycle to 0
+
+# main function to control the plotter based on the g-code instructions
+# this function initializes the servo motors, reads the g-code file, and executes the commands
+def main():
+    import machine  # import the machine module to work with gpio pins and pwm
+    # initialize the servo motors on gpio pins 0, 1, and 2 with a pwm frequency of 50hz
+    servos = {
+        "shoulder": machine.PWM(machine.Pin(0)),
+        "elbow": machine.PWM(machine.Pin(1)),
+        "wrist": machine.PWM(machine.Pin(2)),
+    }
+    for servo in servos.values():
+        servo.freq(50)  # set the pwm frequency to 50hz for accurate servo control
+
+    # read the g-code commands from the file 'line.gcode' (you can replace this with another file)
+    gcode_lines = read_gcode_file("line.gcode")  # make sure the file is uploaded to the pico
+
+    # loop through each line of the g-code file and process it
+    for line in gcode_lines:
+        command, params = parse_gcode_line(line)  # parse the line to get the command and parameters
+        if command:  # if a valid command was found
+            execute_command(command, params, servos)  # execute the command using the parsed parameters
+
+# run the main function if this script is executed directly
+if __name__ == "__main__":
+    main()
